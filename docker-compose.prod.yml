@@ -1,0 +1,64 @@
+# VPS: docker compose -f docker-compose.prod.yml up -d --build
+name: avito-agent
+
+x-app: &app
+  build: .
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://agent:${DB_PASSWORD:?задайте DB_PASSWORD в .env}@db:5432/agent
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+  volumes:   # общие для всех сервисов: nightly обновляет, dialog сразу читает
+    - ./data:/app/data
+    - ./knowledge:/app/knowledge
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: agent
+    ports:
+      - "127.0.0.1:5432:5432"  # наружу не открываем
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "agent"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  gateway:
+    <<: *app
+    command: uvicorn services.avito_gateway.main:app --host 0.0.0.0 --port 8001
+    ports:
+      - "127.0.0.1:8001:8001"
+
+  dialog:
+    <<: *app
+    command: python -m services.dialog.worker
+
+  owner-bot:
+    <<: *app
+    command: python -m services.owner_bot.main
+
+  broadcast:
+    <<: *app
+    command: python -m services.broadcast.worker
+
+  nightly:
+    <<: *app
+    command: python -m services.nightly.worker
+
+  content:   # автопостинг; какие площадки ведёт этот сервер — CONTENT_TARGETS в .env (vk | tg | пусто = обе)
+    <<: *app
+    command: python -m services.content.worker
+
+volumes:
+  pgdata:
