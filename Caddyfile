@@ -1,0 +1,10 @@
+# Таблица учёток (NocoDB): сертификат Let's Encrypt получается сам, перед NocoDB — второй пароль (scripts/sheet_setup.sh)
+{$SHEET_DOMAIN} {
+	basic_auth {
+		{$SHEET_BASIC_USER} {$SHEET_BASIC_HASH}
+		Owner {$SHEET_BASIC_HASH}   # iPhone сам пишет имя с заглавной
+	}
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy nocodb:8080
+	log   # журнал запросов (пароли Caddy не пишет) — видно, кто не вошёл (401)
+}
