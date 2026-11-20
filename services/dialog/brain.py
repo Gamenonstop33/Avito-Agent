@@ -1980,6 +1980,14 @@ def implied_order(history: list[tuple[str, str]], prices: dict[str, dict[int, in
                 months = prev
             else:
                 return None
+    return order_for(months, history, prices, said, asked, offered)
+
+
+def order_for(months: int, history: list[tuple[str, str]], prices: dict[str, dict[int, int]], said: str = "",
+              asked: str = "", offered: list[int] | None = None) -> dict | None:
+    """Тип по сроку и словам клиента: единственный раздел прайса с этим сроком, «консоль»/«ПК» клиента; личный
+    аккаунт — только если клиент о нём говорил. Не ясно — None."""
+    offered = offered or []
     msgs = [t for who, t in history[-12:] if who == "client"]
     client, platform = " ".join(msgs), platform_of(msgs)
     # «и на xbox, и на пк» — это личный аккаунт (прогон 21.10: после прайса на личный «давайте на 6» ушло на консоль)
@@ -2204,6 +2212,43 @@ REQ_PROMISE = re.compile(
     r"должн\w*\s+был\w*|выше|ниже|отдельн\w*)"
     r"(?!\s+(\w+\s+)?(инструкц|доступ|данны|учётк|учетк|код|шаг))")
 REQ_WAIT_REPLY = "Сейчас пришлю реквизиты для оплаты, минуту 🙏"
+TERM_WHICH = "На какой срок оформляем подписку?"
+
+
+def promised_order(reply: str, history: list[tuple[str, str]], prices: dict[str, dict[int, int]]) -> dict | str:
+    """Ответ обещает ссылку / реквизиты, а нейросеть заказ не заполнила — ссылку формирует сам бот (Леонид 20.11:
+    «ссылку должен бот формировать, иначе нахуй он нужен»; прод 20.11: «13 мес — 4 490 ₽, ссылку пришлю» трижды —
+    срок клиент назвал накануне, подсказка смотрит только последние сообщения — и чат ушёл Максу).
+    Срок — последний, что называл клиент за всю переписку; единственный срок в ответе — если клиент сам срок не
+    называл или соглашается на предложенный продавцом. Тип — order_for. Вернёт заказ, а если срок или тип не ясен —
+    вопрос клиенту (срок / консоль или ПК / доп. или личный)."""
+    terms = {t for rows in prices.values() for t in rows}
+    tail = []
+    for who, t in reversed(history):
+        if who == "seller":
+            break
+        tail.append(t)
+    said = " ".join(reversed(tail))
+    start = 0   # только нынешний разговор: срок из прошлой покупки (перерыв больше GAP) — не выбор
+    for i in range(1, len(history)):
+        a, b = getattr(history[i - 1], "at", None), getattr(history[i], "at", None)
+        if a and b and b - a > GAP:
+            start = i
+    named = [int(m.group(1)) if m.group(1) else 6 if m.group(2) else 12
+             for who, t in history[start:] if who == "client" for m in MONTHS_SAID.finditer(t)]
+    named = [t for t in named if t in terms]
+    quoted = {int(x) for x in re.findall(r"(?<!\d)(\d{1,2})\s*мес", reply or "")} & terms
+    months = named[-1] if named else None
+    if len(quoted) == 1 and (offer := next(iter(quoted))) != months and (months is None or CONSENT.search(said)):
+        months = offer   # «давайте» на «Оформим 6 мес — 2 290 ₽?» — срок продавца
+    if months is None:
+        return TERM_WHICH
+    if (order := order_for(months, history, prices, said, reply or "")):
+        return order
+    msgs = [t for who, t in history[-12:] if who == "client"]
+    return OWN_WHICH if own_unclear(msgs) else PLATFORM_AGAIN
+
+
 REQ_AGAIN = re.compile(r"(?i)реквизит|номер\s+(карты|телефона|для\s+оплаты)|куда\s+(платить|переводить|оплачивать|скидывать)|"
                        r"ещё\s+раз|еще\s+раз|не\s+вижу|не\s+пришл|скиньте|скинь|пришлите\s+(номер|ссылк)|ссылк")
 PLATFORM_AGAIN = "Подскажите, подписка нужна для консоли Xbox или для ПК?"

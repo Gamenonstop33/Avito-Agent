@@ -777,6 +777,19 @@ class Dialog:
             # LLM оформила на ПК срок, которого там нет («да, на 2 мес»), — сроки ПК, не «Уточню» владельцу (прод 31.10)
             log.info("%s: на ПК нет %s мес — спрашиваю срок", chat_id, decision.order["months"])
             decision.order, reply = None, missing
+        if (client and reply and not decision.order and not decision.handoff and not owner_req
+                and not (waiting and waiting["reason"] in ("payment", "code"))
+                and not (order and order["status"] in sales.OPEN) and brain.REQ_PROMISE.search(reply)):
+            # обещает ссылку / реквизиты, а заказа нет — оформляет бот сам, Максу не передаём (Леонид 20.11);
+            # срок или тип не ясен — спрашиваем клиента, ссылка уйдёт на ответ
+            got = brain.promised_order(reply, history, (await catalog.load(self.db))[1])
+            keep = " ".join(s for s in brain._sentences(reply) if not brain.REQ_PROMISE.search(s))
+            if isinstance(got, dict):
+                log.info("%s: в ответе обещана ссылка, заказа нет — оформляю сам: %s", chat_id, got)
+                decision.order, reply = got, keep
+            else:
+                log.info("%s: в ответе обещана ссылка, а срок или тип не ясен — спрашиваю: %r", chat_id, got)
+                reply = "\n\n".join(x for x in (keep, got) if x)
         if decision.order and not decision.handoff:
             reply, order = await self.make_order(chat_id, account_id, client_id, decision, reply, said, new, order,
                                                  client_text, loyal_ok=not new and brain.discount_asked(history))
