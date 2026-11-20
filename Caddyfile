@@ -1,0 +1,7 @@
+# Таблица учёток (NocoDB): сертификат Let's Encrypt получается сам. Второго пароля перед NocoDB нет (31.10:
+# Safari на iPhone не прикладывал его к части запросов и спрашивал снова) — вход только в самом NocoDB, регистрация по приглашению
+{$SHEET_DOMAIN} {
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy nocodb:8080
+	log   # журнал запросов
+}
