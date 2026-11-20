@@ -105,6 +105,12 @@ class VK:
                 extra["attachment"] = attachment
             r = await self.call("messages.send", peer_ids=str(peer_id), message=part,
                                 random_id=random.randint(1, 2 ** 31), **extra)
+            # с peer_ids отказ VK (901 — сообщения сообществу запрещены) приходит не ошибкой, а полем error в ответе:
+            # без проверки сообщение терялось молча (20.11: уведомления по Claude Леониду от PREMIUM)
+            err = r[0].get("error") if isinstance(r, list) and r else None
+            if err:
+                raise VKError(f"messages.send: {err.get('description') or err.get('error_msg')} (код {err.get('code')})",
+                              err.get("code") or 0)
             conv_id = r[0].get("conversation_message_id") if isinstance(r, list) and r else None
             if conv_id and self.on_sent:
                 await self.on_sent(peer_id, conv_id)

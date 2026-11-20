@@ -75,10 +75,15 @@ async def notify_admins(text: str) -> None:
     vk = VK(env("VK_GROUP_TOKEN"), int(env("VK_GROUP_ID")))
     try:
         for uid, role in roles().items():
-            if role == "admin":
+            if role != "admin":
+                continue
+            try:
                 await vk.send(uid, text[:3500])
-    except Exception:
-        log.exception("не отправил админам: %s", text[:200])
+            except VKError as e:
+                log.error("не отправил админу %s: %s%s — %s", uid, e, " (сообщения сообществу запрещены)"
+                          if e.code in NO_RETRY else "", text[:200])
+            except Exception:
+                log.exception("не отправил админу %s: %s", uid, text[:200])
     finally:
         await vk.close()
 
